@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LTP Tick Display</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #1a1a2e;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      text-align: center;
+      background: #16213e;
+      padding: 40px 60px;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    h1 { color: #e94560; margin-bottom: 10px; }
+    .source { color: #0f3460; background: #e94560; padding: 4px 12px; border-radius: 20px; font-size: 14px; }
+    .price { font-size: 64px; font-weight: bold; color: #00ff88; margin: 30px 0; }
+    .time { color: #888; font-size: 18px; }
+    .stats { margin-top: 20px; color: #666; }
+    .status { margin-top: 15px; font-size: 14px; }
+    .connected { color: #00ff88; }
+    .disconnected { color: #ff4444; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BTCUSDT LTP</h1>
+    <span class="source" id="source">Loading...</span>
+    <div class="price" id="price">--</div>
+    <div class="time" id="time">Waiting for data...</div>
+    <div class="stats">Ticks received: <span id="count">0</span></div>
+    <div class="status" id="status">Connecting...</div>
+  </div>
+
+  <script>
+    const priceEl = document.getElementById('price');
+    const timeEl = document.getElementById('time');
+    const countEl = document.getElementById('count');
+    const sourceEl = document.getElementById('source');
+    const statusEl = document.getElementById('status');
+
+    let tickCount = 0;
+
+    function connect() {
+      console.log('[WS] Connecting to server...');
+      const ws = new WebSocket(`ws://${window.location.host}`);
+
+      ws.onopen = () => {
+        console.log('[WS] ✓ Connected!');
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'status connected';
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('[WS] Received:', data);
+
+        if (data.type === 'source') {
+          sourceEl.textContent = data.source.toUpperCase();
+          console.log('[WS] Source:', data.source);
+        }
+
+        if (data.type === 'tick') {
+          priceEl.textContent = '$' + data.price.toFixed(2);
+          timeEl.textContent = 'Last update: ' + data.time;
+          tickCount++;
+          countEl.textContent = tickCount;
+          console.log(`[TICK #${tickCount}] $${data.price.toFixed(2)} at ${data.time}`);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[WS] Disconnected. Reconnecting in 3s...');
+        statusEl.textContent = 'Disconnected - Reconnecting...';
+        statusEl.className = 'status disconnected';
+        setTimeout(connect, 3000);
+      };
+
+      ws.onerror = (error) => {
+        console.error('[WS] Error:', error);
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>
