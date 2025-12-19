@@ -17,7 +17,7 @@ export function startBinanceInput(onTick: (price: number, time: string) => void)
     const price = parseFloat(trade.p);
     const time = new Date(trade.T).toLocaleTimeString();
     
-    console.log(`[BINANCE] Tick: $${price.toFixed(2)} at ${time}`);
+    // No logging here - too noisy
     onTick(price, time);
   });
 

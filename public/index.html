@@ -5,90 +5,105 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LTP Tick Display</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #1a1a2e;
-      color: #fff;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    .container {
-      text-align: center;
-      background: #16213e;
-      padding: 40px 60px;
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-    }
-    h1 { color: #e94560; margin-bottom: 10px; }
-    .source { color: #0f3460; background: #e94560; padding: 4px 12px; border-radius: 20px; font-size: 14px; }
-    .price { font-size: 64px; font-weight: bold; color: #00ff88; margin: 30px 0; }
-    .time { color: #888; font-size: 18px; }
-    .stats { margin-top: 20px; color: #666; }
-    .status { margin-top: 15px; font-size: 14px; }
-    .connected { color: #00ff88; }
-    .disconnected { color: #ff4444; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; margin: 0; padding: 20px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { color: #e94560; text-align: center; }
+    .badge { background: #e94560; padding: 4px 12px; border-radius: 20px; font-size: 12px; margin-left: 10px; }
+    .state-badge { background: #0f3460; }
+    .state-badge.position { background: #00ff88; color: #000; }
+    
+    .main { background: #16213e; padding: 30px; border-radius: 16px; text-align: center; margin-bottom: 20px; }
+    .price { font-size: 48px; font-weight: bold; color: #00ff88; margin: 20px 0; }
+    .info { display: flex; justify-content: center; gap: 40px; color: #888; }
+    .info-value { font-size: 20px; color: #fff; }
+    
+    .section { background: #16213e; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    .section h3 { color: #e94560; margin: 0 0 15px 0; }
+    
+    .signal-form { display: flex; gap: 10px; }
+    .signal-input { flex: 1; padding: 10px; border-radius: 8px; border: none; background: #0f3460; color: #fff; }
+    .signal-btn { padding: 10px 20px; background: #e94560; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+    
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #0f3460; }
+    th { color: #888; }
+    
+    .status { text-align: center; font-size: 12px; color: #00ff88; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>BTCUSDT LTP</h1>
-    <span class="source" id="source">Loading...</span>
-    <div class="price" id="price">--</div>
-    <div class="time" id="time">Waiting for data...</div>
-    <div class="stats">Ticks received: <span id="count">0</span></div>
-    <div class="status" id="status">Connecting...</div>
+    <div class="main">
+      <h1>BTCUSDT LTP <span class="badge" id="source">--</span> <span class="badge state-badge" id="state">NO_POSITION</span></h1>
+      <div class="price" id="price">--</div>
+      <div class="info">
+        <div><div>Paper PnL</div><div class="info-value" id="pnl">$0.00</div></div>
+        <div><div>Threshold</div><div class="info-value" id="threshold">--</div></div>
+        <div><div>Ticks</div><div class="info-value" id="count">0</div></div>
+      </div>
+      <div class="status" id="status">Connecting...</div>
+    </div>
+    
+    <div class="section">
+      <h3>Send Signal</h3>
+      <div class="signal-form">
+        <input type="text" class="signal-input" id="signalInput" placeholder="Accepted Entry + stopPx=98000 | sym=BTCUSDT">
+        <button class="signal-btn" onclick="sendSignal()">Send</button>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h3>Condensed Events (saved to signals.csv)</h3>
+      <table>
+        <thead><tr><th>Time</th><th>Event</th><th>LTP</th><th>PnL</th><th>Threshold</th></tr></thead>
+        <tbody id="events"><tr><td colspan="5" style="color:#666">No events yet</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <script>
-    const priceEl = document.getElementById('price');
-    const timeEl = document.getElementById('time');
-    const countEl = document.getElementById('count');
-    const sourceEl = document.getElementById('source');
-    const statusEl = document.getElementById('status');
-
-    let tickCount = 0;
+    let ws, tickCount = 0;
+    const events = [];
 
     function connect() {
-      console.log('[WS] Connecting to server...');
-      const ws = new WebSocket(`ws://${window.location.host}`);
-
-      ws.onopen = () => {
-        console.log('[WS] ✓ Connected!');
-        statusEl.textContent = 'Connected';
-        statusEl.className = 'status connected';
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('[WS] Received:', data);
-
-        if (data.type === 'source') {
-          sourceEl.textContent = data.source.toUpperCase();
-          console.log('[WS] Source:', data.source);
+      ws = new WebSocket(`ws://${window.location.host}`);
+      ws.onopen = () => document.getElementById('status').textContent = 'Connected';
+      ws.onclose = () => { document.getElementById('status').textContent = 'Reconnecting...'; setTimeout(connect, 3000); };
+      
+      ws.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.type === 'source') document.getElementById('source').textContent = d.source.toUpperCase();
+        if (d.type === 'tick') {
+          document.getElementById('price').textContent = '$' + d.price.toFixed(2);
+          document.getElementById('count').textContent = ++tickCount;
         }
-
-        if (data.type === 'tick') {
-          priceEl.textContent = '$' + data.price.toFixed(2);
-          timeEl.textContent = 'Last update: ' + data.time;
-          tickCount++;
-          countEl.textContent = tickCount;
-          console.log(`[TICK #${tickCount}] $${data.price.toFixed(2)} at ${data.time}`);
+        if (d.type === 'state') {
+          const stateEl = document.getElementById('state');
+          stateEl.textContent = d.state;
+          stateEl.className = 'badge state-badge' + (d.state === 'POSITION' ? ' position' : '');
+          document.getElementById('pnl').textContent = '$' + d.paperPnL.toFixed(2);
+          if (d.position) document.getElementById('threshold').textContent = '$' + d.position.threshold;
+        }
+        if (d.type === 'condensed') {
+          events.unshift(d);
+          updateEvents();
         }
       };
+    }
 
-      ws.onclose = () => {
-        console.log('[WS] Disconnected. Reconnecting in 3s...');
-        statusEl.textContent = 'Disconnected - Reconnecting...';
-        statusEl.className = 'status disconnected';
-        setTimeout(connect, 3000);
-      };
+    function updateEvents() {
+      const tbody = document.getElementById('events');
+      tbody.innerHTML = events.slice(0, 10).map(e => 
+        `<tr><td>${new Date().toLocaleTimeString()}</td><td>${e.event}</td><td>$${e.ltp.toFixed(2)}</td><td>$${e.pnl.toFixed(2)}</td><td>${e.threshold}</td></tr>`
+      ).join('') || '<tr><td colspan="5">No events yet</td></tr>';
+    }
 
-      ws.onerror = (error) => {
-        console.error('[WS] Error:', error);
-      };
+    function sendSignal() {
+      const input = document.getElementById('signalInput');
+      if (!input.value.trim()) return;
+      fetch('/signal', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: input.value })
+        .then(r => r.json()).then(() => input.value = '');
     }
 
     connect();
